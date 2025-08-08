@@ -1,0 +1,827 @@
+---
+title: "HBV & HCV"
+output: html_document
+date: "20250319-06-18"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(scales)
+library(ggtext)
+library(patchwork)
+```
+
+```{r}
+# create folder for each file under year
+
+dir.create("../figure", showWarnings = TRUE, recursive = FALSE, mode = "0777")
+```
+
+
+```{r}
+list.files("../rds")
+```
+
+```{r}
+# read RDS
+
+rds_name <- list.files("../rds", pattern= "20250319") %>% str_subset("RDS") %>% str_remove("\\.RDS")
+
+rds_name
+```
+
+```{r}
+rds_path <- paste0("../rds/", rds_name, ".RDS")
+```
+
+```{r}
+for (i in 1:length(rds_name)){
+  assign(rds_name[i]　, readRDS(rds_path[i]))
+}
+```
+
+```{r}
+nuc_name　<- c("ゼフィックス",
+              "ヘプセラ",
+              "バラクルード",
+              "エンテカビル",
+              "テノゼット",
+              "ベムリディ")
+
+nuc_ing <- c("ラミブジン","アデホビル",
+             "エンテカビル",
+             "テノホビル")
+```
+
+
+```{r}
+nuc_name_q <- paste0(nuc_name, collapse = "|")
+
+nuc_ing_q <- paste0(nuc_ing, collapse = "|")
+```
+
+
+```{r}
+df_nuc <- df_oral_20250319 %>%
+  filter(str_detect(DRUG_name, nuc_name_q))
+```
+
+```{r}
+df_nuc$DRUG_name
+```
+
+```{r}
+df_oral_20250319 %>% filter(str_detect(ING, "エムトリシタビン") & str_detect(ING, "テノホビル") &
+                          str_detect(ING, "ジソプロキシルフマル酸"))
+```
+
+
+```{r}
+df_nuc %>% count(DRUG_name, COST_per)
+```
+
+
+```{r}
+df_nuc <- df_nuc %>%
+  mutate(NUC = case_when(str_detect(DRUG_name, "ゼフィックス") ~ "LAM<br>(100 mg)",
+                        str_detect(DRUG_name, "バラクルード") ~ "ETV [branded]<br>(0.5 mg)",
+                         str_detect(DRUG_name, "エンテカビル") &  COST_per == 210.4 ~ "ETV [generic 1]<br>(0.5 mg)",
+                        str_detect(DRUG_name, "エンテカビル") & COST_per == 133.5 ~ "ETV [generic 2]<br>(0.5 mg)",
+                        str_detect(DRUG_name, "エンテカビル") & COST_per == 76.8 ~ "ETV [generic 3]<br>(0.5 mg)",
+                        str_detect(DRUG_name, "テノゼット") ~ "TDF<br>(300 mg)",
+                        str_detect(DRUG_name, "ベムリディ") ~ "TAF<br>(25 mg)",
+                        ))
+```
+
+
+```{r}
+df_nuc <- df_nuc %>%
+  mutate(COST_usd = COST_per/142.98) 
+```
+
+
+```{r}
+df_nuc %>% count(NUC, COST_per)
+```
+
+```{r}
+levels_nuc <- df_nuc %>% distinct(NUC, .keep_all = TRUE) %>% arrange(COST_per) %>% pull(NUC)
+
+levels_nuc
+```
+
+```{r}
+df_nuc <- df_nuc %>%
+  mutate(NUC = factor(NUC, levels  = levels_nuc))
+```
+
+```{r}
+df_nuc <- df_nuc %>%
+  mutate(FILL = case_when(str_detect(NUC, "ETV") ~ "ETV",
+                          .default = NUC))
+```
+
+```{r}
+levels_fill <- df_nuc %>% distinct(FILL, .keep_all = TRUE) %>% arrange(COST_per) %>% pull(FILL)
+
+levels_fill
+```
+
+```{r}
+df_nuc <- df_nuc %>%
+  mutate(FILL = factor(FILL, levels  = levels_fill))
+```
+
+```{r}
+df_nuc <- df_nuc %>%
+  mutate(ALPHA = case_when(str_detect(NUC, "ETV") & str_detect(NUC, "1|2|3") ~ "b",
+                           .default = "a"))
+```
+
+```{r}
+df_nuc <- df_nuc %>%
+  distinct(NUC, .keep_all = TRUE) %>%
+  mutate(COST_label = format(COST_per, nsmall = 1)) %>%
+  mutate(COST_label = str_remove_all(COST_label, "\\s")) %>%
+  mutate(COST_label = paste0("(¥", COST_label, ")")) %>%
+  mutate(USD_label = round(COST_usd, digits = 2)) %>%
+  mutate(USD_label = format(USD_label, nsmall = 2)) %>%
+  mutate(USD_label = str_remove_all(USD_label, "\\s")) %>%
+  mutate(USD_label = paste0("$", USD_label))%>%
+  mutate(label = paste0(USD_label, "<br>", COST_label))
+```
+
+
+```{r}
+p1_a1 <- df_nuc %>%
+  ggplot(aes(COST_usd, NUC, fill = FILL))+
+  geom_col(width = 0.5) +
+  geom_richtext(aes(x = COST_usd + 8/50, y = NUC, label = label),
+                hjust = 0,
+                fill = NA, label.color = NA, 
+                label.padding = grid::unit(rep(0, 4), "pt"), 
+                size= 2.8, colour ="black")+
+  scale_fill_manual(values = c("#2ca02c",
+                               "#7f7f7f",
+                               "#ff7f0e",
+                               "#9467bd")) +
+  scale_alpha_manual(values = c(1, 0.5))+
+  scale_x_continuous(expand = c(0, 0),
+                     breaks = seq(0, 8, 2),
+                     limits = c(0, 8))+
+  coord_cartesian(clip = "off")+
+  labs(tag = "A",
+       title = "Corrected",
+       x = "Price (USD)",
+       y = "Drug") +
+  theme_classic()+
+      theme(plot.tag = element_text(size = 12, colour = "black", face = "bold"),
+            plot.title = element_text(size = 8, colour = "black", face = "bold", hjust = 0.5),
+             axis.title.x = element_blank(),
+          axis.title.y = element_text(size = 8, colour = "black", face = "bold"),
+        axis.text.x = element_text(size = 8, colour = "black"),
+        axis.text.y = element_markdown(size = 8, colour = "black",
+                                       lineheight = 1.2),
+        axis.line = element_line(linewidth = 0.3, colour = "black"),
+        axis.ticks = element_line(linewidth = 0.3, colour = "black"),
+        legend.position = "none",
+        plot.margin = margin(0, 5 , 0, 0, "mm"))
+  
+
+p1_a1 
+```
+
+```{r}
+df_nuc_ori <- df_nuc %>% filter(NUC %in% levels_nuc[3:7]) %>%
+  mutate(COST_usd = case_when(str_detect(NUC, "LAM") ~ NA,
+                              str_detect(NUC, "TDF") ~ 10.51,
+                              str_detect(NUC, "ETV") & str_detect(NUC, "branded") ~ 3.94,
+                              str_detect(NUC, "ETV") & str_detect(NUC, "generic") ~ 1.57,
+                              str_detect(NUC, "TAF") ~ 6.72)) 
+```
+
+```{r}
+df_nuc_ori <- df_nuc_ori %>%
+  mutate(NUC = str_replace(NUC, "generic 1", "generic"))
+```
+
+```{r}
+levels_nuc_ori <- levels_nuc[3:7] %>% str_replace( "generic 1", "generic")
+```
+
+```{r}
+df_nuc_ori <- df_nuc_ori %>%
+  mutate(NUC = factor(NUC, levels = levels_nuc_ori ))
+```
+
+```{r}
+df_nuc_ori <- df_nuc_ori %>%
+  mutate(label = paste0( "$", COST_usd)) %>%
+  mutate(label = case_when(str_detect(NUC, "LAM") ~ NA,
+                           .default = label))
+
+df_nuc_ori 
+```
+
+
+```{r}
+# authors table
+
+p1_a2 <- df_nuc_ori %>%
+  ggplot(aes(COST_usd, NUC, fill = FILL))+
+  geom_col(width = 0.375, alpha = 0.7) +
+  geom_richtext(aes(x = COST_usd + 12/50, y = NUC, label = label),
+            hjust = 0,
+              fill = NA, label.color = NA, 
+                label.padding = grid::unit(rep(0, 4), "pt"), 
+            size= 2.8, colour ="black", alpha = 1)+
+  scale_fill_manual(values = c("#2ca02c",
+                               "#7f7f7f",
+                               "#ff7f0e",
+                               "#9467bd")) +
+  scale_alpha_manual(values = c(1, 0.5))+
+  scale_x_continuous(expand = c(0, 0),
+                     breaks = seq(0, 12, 3),
+                     limits = c(0, 12))+
+  annotate(geom = "text",
+           x = 2, y = 2,
+           hjust = 0, vjust = 0.5,
+           label = "Not available",
+           size = 2.8, colour = "black")+
+  coord_cartesian(clip = "off")+
+  labs(title = "Reported",
+       x = "Price (USD)",
+       y = "Drug") +
+  theme_classic()+
+      theme(#plot.tag = element_blank(),
+            plot.title = element_text(size = 8, colour = "black", face = "bold", hjust = 0.5),
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+        axis.text.x = element_text(size = 8, colour = "black"),
+        axis.text.y = element_markdown(size = 8, colour = "black"),
+        axis.line = element_line(linewidth = 0.3, colour = "black"),
+        axis.ticks = element_line(linewidth = 0.3, colour = "black"),
+        legend.position = "none",
+        plot.margin = margin(0, 5 , 0, 0, "mm"))
+
+p1_a2
+```
+
+
+#Interferon
+
+```{r}
+df_inj_20250319 %>%
+  filter(str_detect(ING, "ペグインターフェロン"))
+```
+
+```{r}
+df_ifn <- df_inj_20250319 %>%
+  filter(str_detect(DRUG_name, "ペガシス|ペグイントロン"))
+```
+
+```{r}
+df_ifn <- df_ifn %>%
+  mutate(IFN = case_when(str_detect(DRUG_name, "９０μｇ") ~ "Peg-IFN-\u03b1-2a<br>(90 \u03bcg)",
+                         str_detect(DRUG_name, "１８０μｇ") ~ "Peg-IFN-\u03b1-2a<br>(180 \u03bcg)"))
+```
+
+```{r}
+levels_ifn <- df_ifn %>% arrange(COST_per) %>% pull(IFN) 
+
+levels_ifn
+```
+
+```{r}
+df_ifn <- df_ifn %>%
+  mutate(IFN = factor(IFN, levels = levels_ifn)) %>%
+    mutate(COST_usd = COST_per/142.98) 
+
+
+```
+
+```{r}
+df_ifn <- df_ifn %>%
+  mutate(ALPHA = case_when(str_detect(IFN, "180") ~ "a",
+                                      .default = "b")) 
+```
+
+```{r}
+df_ifn <- df_ifn %>%
+  mutate(COST_label = scales::comma(COST_per)) %>%
+  mutate(COST_label = paste0("(¥", COST_label, ")")) %>%
+  mutate(USD_label = round(COST_usd, digits = 2)) %>%
+  mutate(USD_label = format(USD_label, nsmall = 2)) %>%
+  mutate(USD_label = str_remove_all(USD_label, "\\s")) %>%
+  mutate(USD_label = paste0("$", USD_label)) %>%
+  mutate(label = paste0(USD_label, "<br>", COST_label))
+
+df_ifn 
+```
+
+
+```{r}
+p1_b1 <- df_ifn %>%
+  ggplot(aes(COST_usd, fct_reorder(IFN, COST_usd)))+
+  geom_col(width = 0.5, fill = "#d62728") +
+  geom_richtext(aes(x = COST_usd + 150/50, y = IFN, label = label),
+            hjust = 0,
+              fill = NA, label.color = NA, 
+                label.padding = grid::unit(rep(0, 4), "pt"), 
+            size= 2.8, colour ="black")+
+  scale_alpha_manual(values = c(1, 0.5))+
+  scale_x_continuous(expand = c(0, 0),
+                     breaks = seq(0, 150, 50),
+                     limits = c(0, 150),
+                     labels = scales::label_comma())+
+  coord_cartesian(clip = "off")+
+  labs(#tag = "B",
+       #title = "Corrected",
+       x = "Price (USD)",
+       y = "Drug") +
+  theme_classic()+
+      theme(#plot.tag = element_text(size = 12, colour = "black", face = "bold"),
+            #plot.title = element_text(size = 8, colour = "black", face = "bold", hjust = 0.5),
+        axis.title.x = element_blank(),
+          axis.title.y = element_text(size = 8, colour = "black", face = "bold"),
+        axis.text.x = element_text(size = 8, colour = "black"),
+        axis.text.y = element_markdown(size = 8, colour = "black",
+                                       lineheight = 1.2),
+        axis.line = element_line(linewidth = 0.3, colour = "black"),
+        axis.ticks = element_line(linewidth = 0.3, colour = "black"),
+        legend.position = "none",
+        plot.margin = margin(5, 10 , 5, 0, "mm"))
+
+p1_b1 
+```
+
+
+```{r}
+df_ifn_ori <- df_ifn %>%
+  mutate(COST_usd = case_when(str_detect(IFN, "180") ~ 116.76,
+                              .default = NA)) 
+```
+
+```{r}
+df_ifn_ori <- df_ifn_ori %>%
+  mutate(label = paste0( "$", COST_usd)) %>%
+  mutate(label = case_when(str_detect(IFN, "90") ~ NA,
+                           .default = label))
+```
+
+
+```{r}
+p1_b2 <- df_ifn_ori  %>%
+  ggplot(aes(COST_usd, IFN))+
+  geom_col(width = 0.5, fill = "#d62728", alpha = 0.7) +
+  geom_richtext(aes(x = COST_usd + 150/50, y = IFN, label = label),
+            hjust = 0,
+              fill = NA, label.color = NA, 
+                label.padding = grid::unit(rep(0, 4), "pt"), 
+            size= 2.8, colour ="black")+
+  scale_alpha_manual(values = c(1, 0.5))+
+  scale_x_continuous(expand = c(0, 0),
+                     breaks = seq(0, 150, 50),
+                     limits = c(0, 150),
+                     labels = scales::label_comma())+
+    annotate(geom = "text",
+           x = 25, y = 1,
+           hjust = 0, vjust = 0.5,
+           label = "Not reported",
+           size = 2.8, colour = "black")+
+  coord_cartesian(clip = "off")+
+  labs(#title = "Original",
+       x = "Price (USD)",
+       y = "Drug") +
+  theme_classic()+
+      theme(#plot.title = element_text(size = 8, colour = "black", face = "bold", hjust = 0.5),
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+        axis.text.x = element_text(size = 8, colour = "black"),
+        axis.text.y = element_markdown(size = 8, colour = "black",
+                                       lineheight = 1.2),
+        axis.line = element_line(linewidth = 0.3, colour = "black"),
+        axis.ticks = element_line(linewidth = 0.3, colour = "black"),
+        legend.position = "none",
+        plot.margin = margin(5, 10 , 5, 0, "mm"))
+
+p1_b2 
+```
+
+
+
+# DAA
+
+```{r}
+daa_name　<- c("ハーボニー",
+              "マヴィレット",
+              "エプクルーサ",
+              "レベトール")
+
+daa_name_q <- paste0(daa_name, collapse = "|")
+```
+
+
+```{r}
+df_daa <- df_oral_20250319 %>%
+  filter(str_detect(DRUG_name, daa_name_q))
+```
+
+```{r}
+df_daa$DRUG_name
+```
+
+
+```{r}
+df_daa <- df_daa %>%
+  mutate(DAA = case_when(str_detect(DRUG_name, "ハーボニー") ~ "SOF/LDV<br>(400/90 mg)",
+                         str_detect(DRUG_name, "マヴィレット") & str_detect(DRUG_name, "顆粒")  ~ "GLE/PIB [granules]<br>(50/20 mg)",
+                        str_detect(DRUG_name, "マヴィレット") & !str_detect(DRUG_name, "顆粒")  ~ "GLE/PIB [tablet]<br>(100/40 mg)",
+                         str_detect(DRUG_name, "エプクルーサ") ~ "SOF/VEL<br>(400/100 mg)",
+                        str_detect(DRUG_name, "レベトール") ~ "Ribavirin<br>(200 mg)"
+                        ))
+```
+
+
+```{r}
+df_daa <- df_daa %>%
+  mutate(COST_usd = COST_per/142.98) 
+```
+
+```{r}
+levels_daa <- df_daa %>% arrange(COST_per) %>% pull(DAA)
+```
+
+```{r}
+df_daa <- df_daa %>%
+  mutate(DAA = factor(DAA, levels = levels_daa))
+```
+
+
+```{r}
+df_daa <- df_daa %>%
+  mutate(FILL = case_when(str_detect(DRUG_name, "ハーボニー") ~ "SOF/LDV",
+                         str_detect(DRUG_name, "マヴィレット") ~ "GLE/PIB",
+                         str_detect(DRUG_name, "エプクルーサ") ~ "SOF/VEL",
+                         str_detect(DRUG_name, "レベトール") ~ "RBV"
+                        ))
+```
+
+```{r}
+levels_fill <- df_daa %>% distinct(FILL, .keep_all = TRUE) %>% arrange(COST_per) %>% pull(FILL)
+
+levels_fill
+```
+
+```{r}
+df_daa <- df_daa %>%
+  mutate(FILL = factor(FILL, levels = levels_fill))
+```
+
+```{r}
+df_daa <- df_daa %>%
+ mutate(COST_label = scales::comma(COST_per, accuracy = 0.1)) %>%
+  mutate(COST_label = paste0("(¥", COST_label, ")")) %>%
+  mutate(USD_label = round(COST_usd, digits = 2)) %>%
+  mutate(USD_label = format(USD_label, nsmall = 2)) %>%
+  mutate(USD_label = str_remove_all(USD_label, "\\s")) %>%
+  mutate(USD_label = paste0("$", USD_label)) %>%
+  mutate(label = paste0(USD_label, "<br>", COST_label))
+```
+
+
+```{r}
+p1_c1 <- df_daa %>%
+  ggplot(aes(COST_usd, DAA, fill = FILL))+
+  geom_col(width = 0.5) +
+  scale_fill_manual(values = c("#8c564b",
+                               "#bcbd22",
+                               "#e377c2",
+                               "#17becf"))+
+  geom_richtext(aes(x = COST_usd + 500/50, y = DAA, label = label),
+            hjust = 0,
+                          fill = NA, label.color = NA, 
+                label.padding = grid::unit(rep(0, 4), "pt"), 
+            size= 2.8, colour ="black", alpha = 1)+
+  scale_alpha_manual(values = c(1, 0.5))+
+  scale_x_continuous(expand = c(0, 0),
+                     breaks = seq(0, 500, 100),
+                     limits = c(0, 500),
+                     labels = scales::label_comma())+
+  coord_cartesian(clip = "off")+
+  labs(#tag = "C",
+       #title = "Corrected",
+       x = "Price (USD)",
+       y = "Drug") +
+  theme_classic()+
+  theme(#plot.tag = element_text(size = 12, colour = "black", face = "bold"),
+        #plot.title = element_text(size = 8, colour = "black", face = "bold", hjust = 0.5),
+        axis.title = element_text(size = 8, colour = "black", face = "bold"),
+        axis.text.x = element_text(size = 8, colour = "black"),
+        axis.text.y = element_markdown(size = 8, colour = "black",
+                                       lineheight = 1.2),
+        axis.line = element_line(linewidth = 0.3, colour = "black"),
+        axis.ticks = element_line(linewidth = 0.3, colour = "black"),
+        legend.position = "none",
+        plot.margin = margin(0, 10 , 2.5, 0, "mm"))
+
+p1_c1
+```
+
+```{r}
+df_daa_ori <- df_daa %>%
+  filter(!str_detect(DAA, "granules"))
+```
+
+```{r}
+df_daa_ori <- df_daa_ori %>%
+  mutate(DAA = str_remove(DAA, "\\s\\[tablet\\]"))
+
+df_daa_ori 
+```
+
+
+```{r}
+df_daa_ori <- df_daa_ori %>%
+  mutate(COST_usd = case_when(FILL == "SOF/VEL" ~ 433.91,
+                         FILL == "SOF/LDV" ~ 393.71,
+                         FILL == "GLE/PIB" ~ 129.42,
+                         FILL == "RBV" ~ 2.31))
+```
+
+
+```{r}
+df_daa_ori <- df_daa_ori %>%
+  mutate(label = paste0("$", COST_usd))
+```
+
+```{r}
+p1_c2 <- df_daa_ori %>%
+  ggplot(aes(COST_usd, fct_reorder(DAA, COST_usd), fill = FILL))+
+  geom_col(width = 0.42, alpha = 0.7) +
+  scale_fill_manual(values = c("#8c564b",
+                               "#bcbd22",
+                               "#e377c2",
+                               "#17becf"))+
+  geom_richtext(aes(x = COST_usd + 500/50, y = DAA, label = label),
+            hjust = 0,
+                fill = NA, label.color = NA, 
+                label.padding = grid::unit(rep(0, 4), "pt"), 
+            size= 2.8, colour ="black", alpha = 1)+
+  scale_alpha_manual(values = c(1, 0.5))+
+  scale_x_continuous(expand = c(0, 0),
+                     breaks = seq(0, 500, 100),
+                     limits = c(0, 500),
+                     labels = scales::label_comma())+
+  coord_cartesian(clip = "off")+
+  labs(#title = "Original",
+       x = "Price (USD)",
+       y = "Drug") +
+  theme_classic()+
+      theme(#plot.title = element_text(size = 8, colour = "black", face = "bold", hjust = 0.5),
+          axis.title.x = element_text(size = 8, colour = "black", face = "bold"),
+          axis.title.y = element_blank(),
+        axis.text.x = element_text(size = 8, colour = "black"),
+        axis.text.y = element_markdown(size = 8, colour = "black",
+                                       lineheight = 1.2),
+        axis.line = element_line(linewidth = 0.3, colour = "black"),
+        axis.ticks = element_line(linewidth = 0.3, colour = "black"),
+        legend.position = "none",
+        plot.margin = margin(0, 5,0, 0, "mm"))
+
+p1_c2
+```
+
+
+
+```{r}
+# comparison for HBV
+
+
+df_nuc_jp <- df_nuc %>%
+  filter(!str_detect(NUC, "generic")) %>%
+  bind_rows(tibble(NUC = "ADF<br>(10 mg)",
+                   COST_usd = NA))  %>% 
+  mutate(CN = "Japan") 
+
+df_nuc_jp 
+```
+
+```{r}
+df_nuc_au <- df_nuc_jp %>%
+  mutate(CN = "Australia") %>%
+  mutate(COST_usd = case_when(str_detect(NUC, "LAM") ~ 1.67,
+                              str_detect(NUC, "ADF") ~ 23.37,
+                               str_detect(NUC, "TDF") ~ 3.85,
+                              str_detect(NUC, "ETV") ~ 1.83,
+                              .default = NA))
+  
+```
+
+```{r}
+df_nuc_us <- df_nuc_jp %>%
+  mutate(CN = "United States") %>%
+  mutate(COST_usd = case_when(str_detect(NUC, "LAM") ~ 16.09,
+                              str_detect(NUC, "ADF") ~ 37.89,
+                              str_detect(NUC, "TDF") ~ 50.14,
+                              str_detect(NUC, "TAF") ~ 57.66,
+                              str_detect(NUC, "ETV") ~ 54.90,
+                              .default = NA))
+```
+
+
+```{r}
+df_nuc_comp <- df_nuc_jp %>%
+  bind_rows(df_nuc_au) %>%
+  bind_rows(df_nuc_us)
+```
+
+```{r}
+df_nuc_comp <- df_nuc_comp %>%
+  mutate(label = case_when(is.na(COST_usd) ~ "N/A",
+                          .default = NA))
+```
+
+```{r}
+# clean NUC
+
+df_nuc_comp <- df_nuc_comp %>%
+  mutate(NUC = str_remove(NUC, "\\s.+")) %>%
+  mutate(NUC = str_remove(NUC, "\\<.+"))
+
+df_nuc_comp$NUC
+```
+```{r}
+df_nuc_comp <- df_nuc_comp %>%
+  mutate(NUC = factor(NUC, levels = c("LAM",
+                                      "ADF",
+                                      "ETV",
+                                      "TDF",
+                                      "TAF"))) %>%
+  mutate(CN = factor(CN, levels = c("United States",
+                                    "Japan",
+                                    "Australia")))
+```
+
+
+```{r}
+df_nuc_comp %>%
+  mutate(COST_usd_label = round(COST_usd, digits = 2)) %>%
+  ggplot(aes(NUC,COST_usd, fill = CN))+
+  geom_col(width = 0.5, position = "dodge")+
+  scale_fill_manual(values = c("#1f77b4",
+                               "#d62728",
+                               "#bcbd22"),
+                    name = "Country")+
+  geom_text(aes(x = NUC, y = COST_usd, label = COST_usd_label),
+            position = position_dodge(width = 0.5),
+            size = 2.8, colour = "black", angle = 90, hjust = 0, vjust = 0.5)+
+  scale_y_continuous(expand = c(0,0),
+                     breaks = seq(0, 60, 10),
+                     limits = c(0, 60))+
+  coord_cartesian(clip = "off")+
+  guides(fill = guide_legend(override.aes = list(colour = "black",
+                                                 linewidth = 0.2) ) )+
+  labs(tag = "B",
+       x = "Drug",
+       y = "Price (USD)")+
+  theme_classic()+
+  theme(plot.tag = element_text(size = 12, colour = "black", face = "bold"),
+          axis.title = element_text(size = 8, colour = "black", face = "bold"),
+        axis.text.x = element_text(size = 8, colour = "black"),
+        axis.text.y = element_markdown(size = 8, colour = "black",
+                                       lineheight = 1.2),
+        axis.line = element_line(linewidth = 0.3, colour = "black"),
+        axis.ticks = element_line(linewidth = 0.3, colour = "black"),
+        legend.position = "inside",
+        legend.justification.inside = c(0, 1),
+        legend.position.inside = c(0.05, 1),
+        legend.key.size = unit(5, "mm"),
+        legend.title = element_text(size = 8, colour = "black", face = "bold"),
+        legend.text = element_text(size = 8, colour = "black"),
+        plot.margin = margin(0, 0 , 0, 0, "mm"),
+        legend.margin = margin(0, 0 , 0, 0, "mm"))
+```
+
+
+```{r}
+p1_d <- df_nuc_comp %>%
+  ggplot(aes(NUC,COST_usd, fill = CN))+
+  geom_col(width = 0.5, position = "dodge")+
+  scale_fill_manual(values = c("#1f77b4",
+                               "#d62728",
+                               "#bcbd22"),
+                    name = "Country")+
+  geom_text(aes(x = NUC, y = 3, label = label),
+            position = position_dodge(width = 0.5),
+            size = 2.8, colour = "black", angle = 90, hjust = 0, vjust = 0.5)+
+  scale_y_continuous(expand = c(0,0),
+                     breaks = seq(0, 60, 10),
+                     limits = c(0, 60))+
+  guides(fill = guide_legend(override.aes = list(colour = "black",
+                                                 linewidth = 0.2) ) )+
+  labs(tag = "B",
+       x = "Drug",
+       y = "Price (USD)")+
+  theme_classic()+
+  theme(plot.tag = element_text(size = 12, colour = "black", face = "bold"),
+          axis.title = element_text(size = 8, colour = "black", face = "bold"),
+        axis.text.x = element_text(size = 8, colour = "black"),
+        axis.text.y = element_markdown(size = 8, colour = "black",
+                                       lineheight = 1.2),
+        axis.line = element_line(linewidth = 0.3, colour = "black"),
+        axis.ticks = element_line(linewidth = 0.3, colour = "black"),
+        legend.position = "inside",
+        legend.justification.inside = c(0, 1),
+        legend.position.inside = c(0.05, 1),
+        legend.key.size = unit(5, "mm"),
+        legend.title = element_text(size = 8, colour = "black", face = "bold"),
+        legend.text = element_text(size = 8, colour = "black"),
+        plot.margin = margin(0, 0 , 0, 0, "mm"),
+        legend.margin = margin(0, 0 , 0, 0, "mm"))
+
+p1_d 
+```
+
+
+```{r}
+p1 <- free(p1_a1, type = "label", side = "l") + p1_a2 + 
+  free(p1_b1, type = "label", side = "l") + p1_b2 +
+  free(p1_c1, type = "label", side = "l") + p1_c2 +
+  free(p1_d, type = "label", side = "l") + 
+  plot_layout(design = "
+              AB
+              AB
+              AB
+              AB
+              AB
+              AB
+              AB
+              AB
+              AB
+              AB
+              AB
+              AB
+              AB
+              AB
+              AB
+              AB
+              AB
+              AB
+              AB
+              CD
+              CD
+              CD
+              CD
+              CD
+              CD
+              EF
+              EF
+              EF
+              EF
+              EF
+              EF
+              EF
+              EF
+              EF
+              EF
+              EF
+              EF
+              EF
+              EF
+              GG
+              GG
+              GG
+              GG
+              GG
+              GG
+              GG
+              GG
+              GG
+              GG
+              GG
+              GG")
+
+ggsave("../figure/Fig1.pdf", p1, 
+       device=cairo_pdf,
+       height = 235, 
+       width = 175, unit = "mm")
+```
+
+
+
+# end
+
+# check ADF
+
+```{r}
+df_oral_20250319 %>% filter(str_detect(DRUG_name, "ヘプセラ"))
+```
+```{r}
+df_oral_20250319 %>% filter(str_detect(ING, "アデホビル|ラミブジン"))
+```

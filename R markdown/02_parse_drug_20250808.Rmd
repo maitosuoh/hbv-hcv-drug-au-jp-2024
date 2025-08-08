@@ -1,0 +1,91 @@
+---
+title: "Untitled"
+output: html_document
+date: "2024-10-16"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(readxl)
+```
+
+```{r}
+dir.create("../rds", showWarnings = TRUE, recursive = FALSE, mode = "0777")
+
+dir.create("../rds/drug",
+             showWarnings = TRUE, recursive = FALSE, mode = "0777")
+```
+
+
+```{r}
+list.files("../xlsx")
+```
+
+```{r}
+list.files("../xlsx/drug")
+```
+
+```{r}
+xlsx_name_oral <- list.files("../xlsx/drug/oral") 
+
+xlsx_name_oral
+```
+
+```{r}
+xlsx_path_oral <- paste0("../xlsx/drug/oral/", xlsx_name_oral %>% str_subset("20250319"))
+```
+
+```{r}
+# x is oral, inj, ext
+
+parse_drug <- function(x){
+  
+  df <- read_excel(x, 
+                   col_names = c("TYPE",
+                                "COST_code",
+                    "ING",
+                    "DOSE",
+                    "X_e",
+                    "X_f",
+                    "X_g",
+                    "DRUG_name",
+                    "COMPANY",
+                    "GENERIC",
+                    "ORIGINAL",
+                    "ORI_w_GEN",
+                    "COST_per",
+                    "DEADLINE",
+                    "NOTE"),
+                   skip = 1) %>%
+    mutate(FILE = x) %>%
+    mutate(FILE = str_extract(FILE, "(?<=\\/)[^\\/]+(?=\\.xls)")) %>%
+    mutate(YEAR = str_extract(FILE, "(?<=tp)2[:digit:]{3}"))
+}
+```
+
+
+```{r}
+parse_drug(xlsx_path_oral) %>% saveRDS("../rds/df_oral_20250319.RDS")
+```
+
+#inj
+
+```{r}
+xlsx_name_inj <- list.files("../xlsx/drug/inj") 
+
+xlsx_name_inj
+```
+
+```{r}
+xlsx_path_inj <- paste0("../xlsx/drug/inj/", xlsx_name_inj %>% str_subset("20250319"))
+
+xlsx_path_inj
+```
+
+```{r}
+parse_drug(xlsx_path_inj) %>% saveRDS("../rds/df_inj_20250319.RDS")
+```
